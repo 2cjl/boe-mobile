@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 
 import 'package:boe_mobile/plan.dart';
 import 'package:boe_mobile/plan_cron.dart';
 import 'package:boe_mobile/utils.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mac_address/mac_address.dart';
 import 'package:network_info_plus/network_info_plus.dart';
@@ -79,7 +81,6 @@ String jsonString = '''
       }
     ]
     ''';
-Map<int, PlanCron> planCronMap = {};
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({Key? key, required this.title}) : super(key: key);
@@ -91,6 +92,9 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  static const platform = MethodChannel('tclx.xyz/info');
+  Map<int, PlanCron> planCronMap = {};
+
   @override
   void initState() {
     super.initState();
@@ -104,23 +108,13 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  getDeviceInfo() async {
-    if (Platform.isAndroid) {
-      DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-      print(androidInfo.toMap());
-    } else {
-      print('Not support platform');
+  Future<void> getDeviceInfo() async {
+    try {
+      final Map<Object?, Object?> result = await platform.invokeMethod('getDeivceInfo');
+      print('device info: $result');
+    } on PlatformException catch (e) {
+      print("Failed to get device info: '${e.message}'");
     }
-
-    // ip 信息
-    final info = NetworkInfo();
-    var wifiIP = await info.getWifiIP(); // 192.168.1.43
-    print('wifiIP: $wifiIP');
-
-    // mac 地址
-    final macAddress = await GetMac.macAddress;
-    print('macAddress: $macAddress');
 
     // 经纬度
     Geolocator
