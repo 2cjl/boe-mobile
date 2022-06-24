@@ -1,16 +1,14 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:async';
 
 import 'package:boe_mobile/plan.dart';
 import 'package:boe_mobile/plan_cron.dart';
 import 'package:boe_mobile/utils.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:mac_address/mac_address.dart';
-import 'package:network_info_plus/network_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/io.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 void main() {
@@ -93,6 +91,9 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel('tclx.xyz/info');
+  final channel = WebSocketChannel.connect(
+    Uri.parse('wss://echo.websocket.events'),
+  );
   Map<int, PlanCron> planCronMap = {};
 
   @override
@@ -100,25 +101,50 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     // 获取设备信息
     getDeviceInfo();
-    //TODO websocket 连接获取任务列表
-    List<Plan> plans =
-        (json.decode(jsonString) as List).map((e) => Plan.fromJson(e)).toList();
-    for (var plan in plans) {
-      addCron(plan);
-    }
+    listenHandle();
+    //TODO test
+    print(DateTime.now());
+    Future.delayed(Duration(seconds: 1), () {
+      sendHandle();
+    });
+  }
+
+  void listenHandle() {
+    channel.stream.listen((message) {
+      Map<String, dynamic> msgMap = json.decode(message);
+      switch (msgMap["type"]) {
+        case "plan_list":
+          List<Plan> plans = (json.decode(msgMap["plan"]) as List)
+              .map((e) => Plan.fromJson(e))
+              .toList();
+          for (var plan in plans) {
+            addCron(plan);
+          }
+          break;
+        default:
+          print('not support type');
+      }
+    });
+  }
+
+  void sendHandle() {
+    channel.sink.add(json
+        .encode(<String, dynamic>{"type": "plan_list", "plan": jsonString}));
   }
 
   Future<void> getDeviceInfo() async {
     try {
-      final Map<Object?, Object?> result = await platform.invokeMethod('getDeivceInfo');
+      final Map<Object?, Object?> result =
+          await platform.invokeMethod('getDeivceInfo');
       print('device info: $result');
     } on PlatformException catch (e) {
       print("Failed to get device info: '${e.message}'");
     }
 
     // 经纬度
-    Geolocator
-        .getCurrentPosition(desiredAccuracy: LocationAccuracy.best, forceAndroidLocationManager: true)
+    Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.best,
+            forceAndroidLocationManager: true)
         .then((Position position) {
       print('lat: ${position.latitude}, lng: ${position.longitude}');
     }).catchError((e) {
@@ -126,7 +152,8 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  addCron(Plan plan) {
+  void addCron(Plan plan) {
+    if (DateTime.now().isAfter(DateTime.parse(plan.endDate))) return;
     PlanCron planCron = PlanCron(plan.id);
 
     // 创建时间段计时器
@@ -194,14 +221,16 @@ class _MyHomePageState extends State<MyHomePage> {
         //     controller.loadHtmlString(htmlData);
         //   },
         // ),
-        child: Text(htmlData == '' ? 'Welcome to BOE' : htmlData),
+        child: Text(htmlData.isEmpty ? 'Welcome to BOE' : htmlData),
       ),
     ));
   }
 
   @override
   void dispose() {
-    planCronMap.forEach((key, value) {value.close();});
+    planCronMap.forEach((key, value) {
+      value.close();
+    });
     super.dispose();
   }
 }
