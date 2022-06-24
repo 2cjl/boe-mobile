@@ -1,8 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:boe_mobile/plan.dart';
 import 'package:boe_mobile/plan_cron.dart';
 import 'package:boe_mobile/utils.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:mac_address/mac_address.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -89,11 +94,42 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    // 获取设备信息
+    getDeviceInfo();
+    //TODO websocket 连接获取任务列表
     List<Plan> plans =
         (json.decode(jsonString) as List).map((e) => Plan.fromJson(e)).toList();
     for (var plan in plans) {
       addCron(plan);
     }
+  }
+
+  getDeviceInfo() async {
+    if (Platform.isAndroid) {
+      DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+      print(androidInfo.toMap());
+    } else {
+      print('Not support platform');
+    }
+
+    // ip 信息
+    final info = NetworkInfo();
+    var wifiIP = await info.getWifiIP(); // 192.168.1.43
+    print('wifiIP: $wifiIP');
+
+    // mac 地址
+    final macAddress = await GetMac.macAddress;
+    print('macAddress: $macAddress');
+
+    // 经纬度
+    Geolocator
+        .getCurrentPosition(desiredAccuracy: LocationAccuracy.best, forceAndroidLocationManager: true)
+        .then((Position position) {
+      print('lat: ${position.latitude}, lng: ${position.longitude}');
+    }).catchError((e) {
+      print(e);
+    });
   }
 
   addCron(Plan plan) {
@@ -167,5 +203,11 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Text(htmlData == '' ? 'Welcome to BOE' : htmlData),
       ),
     ));
+  }
+
+  @override
+  void dispose() {
+    planCronMap.forEach((key, value) {value.close();});
+    super.dispose();
   }
 }
