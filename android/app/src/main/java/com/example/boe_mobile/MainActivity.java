@@ -3,26 +3,44 @@ package com.example.boe_mobile;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 
+import io.flutter.Log;
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.ActivityManager;
+import android.content.Context;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Point;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Environment;
+import android.os.StatFs;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.format.Formatter;
+import android.view.WindowManager;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.net.NetworkInterface;
+import java.text.DecimalFormat;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class MainActivity extends FlutterActivity {
     private static final String CHANNEL = "tclx.xyz/info";
+    private String[] units = {"B", "KB", "MB", "GB", "TB"};
 
     @SuppressLint("HardwareIds")
     @Override
@@ -33,30 +51,53 @@ public class MainActivity extends FlutterActivity {
                         (call, result) -> {
                             if (call.method.equals("getDeivceInfo")) {
                                 Map<String, Object> map = new HashMap<>();
-                                map.put("brand", Build.BRAND);
-                                map.put("deviceID", Settings.Secure.getString(
+                                map.put("hardwareId", Settings.Secure.getString(
                                         getContext().getContentResolver(),
                                         Settings.Secure.ANDROID_ID
                                 ));
                                 map.put("model", Build.MODEL);
-                                map.put("id", Build.ID);
-                                map.put("sdk", Build.VERSION.SDK_INT);
-                                map.put("manufacture", Build.MANUFACTURER);
-                                map.put("user", Build.USER);
-                                map.put("type", Build.TYPE);
-                                map.put("incremental", Build.VERSION.INCREMENTAL);
-                                map.put("board", Build.BOARD);
-                                map.put("host", Build.HOST);
-                                map.put("fingerPrint", Build.FINGERPRINT);
-                                map.put("versionCode", Build.VERSION.RELEASE);
+
+                                // 屏幕
+                                WindowManager windowManager = getWindow().getWindowManager();
+                                Point point = new Point();
+                                windowManager.getDefaultDisplay().getRealSize(point);
+                                map.put("resolution", point.x + "x" + point.y);
+
+                                // size
+                                StatFs sf = new StatFs(Environment.getExternalStorageDirectory().getPath());
+                                long totalSize = sf.getTotalBytes();
+                                long availableSize = sf.getAvailableBytes();
+                                map.put("storage", getUnit(availableSize) + " 可用（共 " + getUnit(totalSize) + "）");
+
+                                // ram
+                                ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                                ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
+                                manager.getMemoryInfo(info);
+                                map.put("memory", getUnit(info.totalMem));
+
+                                // app version
+                                try {
+                                    PackageManager pm = getPackageManager();
+                                    PackageInfo pi = pm.getPackageInfo(getPackageName(), 0);
+                                    String versionName = pi.versionName;
+                                    map.put("versionApp", versionName);
+                                } catch (Exception e) {
+                                    Log.e("VersionInfo", "Exception", e);
+                                }
+
+                                // running time
+                                map.put("runningTime", SystemClock.elapsedRealtime());
 
                                 // ip
                                 WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
                                 String ip = Formatter.formatIpAddress(wifiManager.getConnectionInfo().getIpAddress());
                                 map.put("ip", ip);
-                                map.put("mac", getMacAddress());
                                 result.success(map);
 //                                result.error("UNAVAILABLE", "Battery level not available.", null);
+                            } else if (call.method.equals("getMacAddress")) {
+                                result.success(getMacAddress());
+                            } else if (call.method.equals("getRunningTime")) {
+                                result.success(SystemClock.elapsedRealtime());
                             } else {
                                 result.notImplemented();
                             }
@@ -64,7 +105,7 @@ public class MainActivity extends FlutterActivity {
                 );
     }
 
-    private String getMacAddress(){
+    private String getMacAddress() {
         try {
             List<NetworkInterface> all = Collections.list(NetworkInterface.getNetworkInterfaces());
             for (NetworkInterface nif : all) {
@@ -75,7 +116,7 @@ public class MainActivity extends FlutterActivity {
                 }
                 StringBuilder res1 = new StringBuilder();
                 for (byte b : macBytes) {
-                    res1.append(String.format("%02X:",b));
+                    res1.append(String.format("%02X:", b));
                 }
                 if (res1.length() > 0) {
                     res1.deleteCharAt(res1.length() - 1);
@@ -85,5 +126,14 @@ public class MainActivity extends FlutterActivity {
         } catch (Exception ex) {
         }
         return "02:00:00:00:00:00";
+    }
+
+    private String getUnit(float size) {
+        int index = 0;
+        while (size > 1024 && index < 4) {
+            size = size / 1024;
+            index++;
+        }
+        return String.format(Locale.getDefault(), " %.2f %s", size, units[index]);
     }
 }

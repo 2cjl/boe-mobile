@@ -92,21 +92,45 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel('tclx.xyz/info');
   final channel = WebSocketChannel.connect(
-    Uri.parse('wss://echo.websocket.events'),
+    Uri.parse('ws://47.97.9.122:8080/ws'),
   );
+  late Timer heartBeat;
   Map<int, PlanCron> planCronMap = {};
+  int planIdNow = 0;  // 0 是没有计划执行
 
   @override
   void initState() {
     super.initState();
-    // 获取设备信息
-    getDeviceInfo();
     listenHandle();
-    //TODO test
-    print(DateTime.now());
-    Future.delayed(Duration(seconds: 1), () {
-      sendHandle();
+    sayHello();
+    initHeartBeat();
+    syncPlan();
+  }
+
+  void sayHello() async {
+    try {
+      final String mac = await platform.invokeMethod('getMacAddress');
+      sendHandle(<String, dynamic>{"type": "hello", "mac": mac});
+    } on PlatformException catch (e) {
+      print("Failed to get device info: '${e.message}'");
+    }
+  }
+
+  void initHeartBeat() {
+    heartBeat =
+    Timer.periodic(const Duration(milliseconds: 5000), (timer) async {
+      try {
+        // print('ping');
+        final int runningTime = await platform.invokeMethod('getRunningTime');
+        sendHandle(<String, dynamic>{"type": "ping", "runningTime": runningTime, "planId": planIdNow});
+      } on PlatformException catch (e) {
+        print("Failed to get device info: '${e.message}'");
+      }
     });
+  }
+
+  void syncPlan() {
+    sendHandle(<String, dynamic>{"type": "sync_plan"});
   }
 
   void listenHandle() {
@@ -121,22 +145,28 @@ class _MyHomePageState extends State<MyHomePage> {
             addCron(plan);
           }
           break;
+        case "device_info":
+          getDeviceInfo();
+          break;
         default:
+          print('message: $message');
           print('not support type');
       }
     });
   }
 
-  void sendHandle() {
-    channel.sink.add(json
-        .encode(<String, dynamic>{"type": "plan_list", "plan": jsonString}));
+  void sendHandle(Map<String, dynamic> data) {
+    channel.sink.add(json.encode(data));
   }
 
   Future<void> getDeviceInfo() async {
+    Map<String, dynamic> info = {};
     try {
       final Map<Object?, Object?> result =
           await platform.invokeMethod('getDeivceInfo');
-      print('device info: $result');
+      info.addAll(result.cast<String, dynamic>()); // convert map type
+      // mac
+      final String mac = await platform.invokeMethod('getMacAddress');
     } on PlatformException catch (e) {
       print("Failed to get device info: '${e.message}'");
     }
@@ -146,10 +176,13 @@ class _MyHomePageState extends State<MyHomePage> {
             desiredAccuracy: LocationAccuracy.best,
             forceAndroidLocationManager: true)
         .then((Position position) {
-      print('lat: ${position.latitude}, lng: ${position.longitude}');
+      info['latitude'] = position.latitude;
+      info['longitude'] = position.longitude;
     }).catchError((e) {
       print(e);
     });
+
+    sendHandle(<String, dynamic>{"type": "device_info", "info": info});
   }
 
   void addCron(Plan plan) {
@@ -167,6 +200,7 @@ class _MyHomePageState extends State<MyHomePage> {
         planCron.add(startTime, () {
           print(
               '[${playPeriod.startTime}]plan ${plan.id} start time: ${playPeriod.html}');
+          planIdNow = plan.id;
           setState(() {
             htmlData = playPeriod.html;
           });
@@ -175,6 +209,7 @@ class _MyHomePageState extends State<MyHomePage> {
             generateCronTime(playPeriod.endTime, playPeriod.loopMode);
         planCron.add(endTime, () {
           print('[${playPeriod.endTime}]plan ${plan.id} stop time: stop');
+          planIdNow = 0;
           setState(() {
             htmlData = '';
           });
@@ -199,6 +234,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // 把所有 cron 删除
     planCron.add(generateCronDate(plan.endDate), () {
       print('[${generateCronDate(plan.endDate)}]plan ${plan.id} end date: end');
+      planIdNow = 0;
       setState(() {
         htmlData = '';
       });
@@ -231,6 +267,8 @@ class _MyHomePageState extends State<MyHomePage> {
     planCronMap.forEach((key, value) {
       value.close();
     });
+    channel.sink.close();
+    heartBeat.cancel();
     super.dispose();
   }
 }
