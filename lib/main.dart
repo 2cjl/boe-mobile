@@ -91,75 +91,53 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel('tclx.xyz/info');
-  final channel = WebSocketChannel.connect(
-    Uri.parse('ws://47.97.9.122:8080/ws'),
-  );
-  late Timer heartBeat;
   Map<int, PlanCron> planCronMap = {};
-  int planIdNow = 0;  // 0 是没有计划执行
+  WebSocketChannel? channel;
+  Timer? heartBeat; // 心跳定时器
+  Timer? reconnectTimer; // 重连定时器
+  final heartTimes = 3000; // 心跳间隔
+  final num reconnectCount = 60; // 重连次数，默认60次
+  num planIdNow = 0; // 0 是没有计划执行
+  num reconnectTimes = 0; // 重连计数器
 
   @override
   void initState() {
     super.initState();
-    listenHandle();
-    sayHello();
-    initHeartBeat();
-    syncPlan();
+    openSocket();
   }
 
-  void sayHello() async {
+  /// 连接回调
+  sayHello() async {
     try {
       final String mac = await platform.invokeMethod('getMacAddress');
-      sendHandle(<String, dynamic>{"type": "hello", "mac": mac});
+      sendHandle(<String, dynamic>{'type': 'hello', 'mac': mac});
     } on PlatformException catch (e) {
-      print("Failed to get device info: '${e.message}'");
+      print('Failed to get mac address: ${e.message}');
     }
   }
 
-  void initHeartBeat() {
+  initHeartBeat() {
     heartBeat =
-    Timer.periodic(const Duration(milliseconds: 5000), (timer) async {
+        Timer.periodic(Duration(milliseconds: heartTimes), (timer) async {
       try {
         // print('ping');
         final int runningTime = await platform.invokeMethod('getRunningTime');
-        sendHandle(<String, dynamic>{"type": "ping", "runningTime": runningTime, "planId": planIdNow});
+        sendHandle(<String, dynamic>{
+          'type': 'ping',
+          'runningTime': runningTime,
+          'planId': planIdNow
+        });
       } on PlatformException catch (e) {
-        print("Failed to get device info: '${e.message}'");
+        print('Failed to get running time: ${e.message}');
       }
     });
   }
 
-  void syncPlan() {
-    sendHandle(<String, dynamic>{"type": "sync_plan"});
+  syncPlan() {
+    sendHandle(<String, dynamic>{'type': 'syncPlan'});
   }
 
-  void listenHandle() {
-    channel.stream.listen((message) {
-      Map<String, dynamic> msgMap = json.decode(message);
-      switch (msgMap["type"]) {
-        case "plan_list":
-          List<Plan> plans = (json.decode(msgMap["plan"]) as List)
-              .map((e) => Plan.fromJson(e))
-              .toList();
-          for (var plan in plans) {
-            addCron(plan);
-          }
-          break;
-        case "device_info":
-          getDeviceInfo();
-          break;
-        default:
-          print('message: $message');
-          print('not support type');
-      }
-    });
-  }
-
-  void sendHandle(Map<String, dynamic> data) {
-    channel.sink.add(json.encode(data));
-  }
-
-  Future<void> getDeviceInfo() async {
+  getDeviceInfo() async {
     Map<String, dynamic> info = {};
     try {
       final Map<Object?, Object?> result =
@@ -167,8 +145,9 @@ class _MyHomePageState extends State<MyHomePage> {
       info.addAll(result.cast<String, dynamic>()); // convert map type
       // mac
       final String mac = await platform.invokeMethod('getMacAddress');
+      info['mac'] = mac;
     } on PlatformException catch (e) {
-      print("Failed to get device info: '${e.message}'");
+      print('Failed to get device info: ${e.message}');
     }
 
     // 经纬度
@@ -178,14 +157,15 @@ class _MyHomePageState extends State<MyHomePage> {
         .then((Position position) {
       info['latitude'] = position.latitude;
       info['longitude'] = position.longitude;
+      // print('info $info');
+      sendHandle(<String, dynamic>{'type': 'device_info', 'info': info});
     }).catchError((e) {
-      print(e);
+      print('Failed to get position: ${e.message}');
+      sendHandle(<String, dynamic>{'type': 'device_info', 'info': info});
     });
-
-    sendHandle(<String, dynamic>{"type": "device_info", "info": info});
   }
 
-  void addCron(Plan plan) {
+  addCron(Plan plan) {
     if (DateTime.now().isAfter(DateTime.parse(plan.endDate))) return;
     PlanCron planCron = PlanCron(plan.id);
 
@@ -244,6 +224,82 @@ class _MyHomePageState extends State<MyHomePage> {
     planCronMap[plan.id] = planCron;
   }
 
+  /// ws 相关
+  listenHandle() {
+    channel?.stream.listen((message) {
+      if (message == 'null') return;
+      // print('receive: $message');
+      Map<String, dynamic> msgMap = json.decode(message);
+      switch (msgMap['type']) {
+        case 'planList':
+          List<Plan> plans = List<Plan>.from(msgMap[
+              'plan']); // avoid error: type 'List<dynamic>' is not a subtype of type 'String'
+          for (var plan in plans) {
+            addCron(plan);
+          }
+          break;
+        case 'deviceInfo':
+          getDeviceInfo();
+          break;
+        case 'pong':
+          // print('pong');
+          break;
+        case 'hi':
+          print('hello succeed');
+          break;
+        default:
+          print('not support type');
+      }
+    }, onDone: webSocketOnDone);
+  }
+
+  sendHandle(Map<String, dynamic> data) {
+    channel?.sink.add(json.encode(data));
+  }
+
+  // 连接开启回调
+  onOpen() {
+    sayHello();
+    initHeartBeat();
+    syncPlan();
+    getDeviceInfo();
+  }
+
+  // ws 连接
+  openSocket() {
+    if (channel == null) channel?.sink.close();
+    channel = WebSocketChannel.connect(
+      Uri.parse('ws://47.97.9.122:8888/'),
+    );
+    print('connect succeed');
+    // 连接成功，重置重连计数器
+    reconnectTimes = 0;
+    reconnectTimer?.cancel();
+    listenHandle();
+    onOpen();
+  }
+
+  // 重连机制
+  reconnect() {
+    if (reconnectTimes < reconnectCount) {
+      reconnectTimes++;
+      reconnectTimer =
+          Timer.periodic(Duration(milliseconds: heartTimes), (timer) {
+        openSocket();
+      });
+    } else {
+      print('connect failed');
+      reconnectTimer?.cancel();
+      return;
+    }
+  }
+
+  // ws 关闭连接回调
+  webSocketOnDone() {
+    print('ws closed, try to reconnect');
+    reconnect();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -251,13 +307,13 @@ class _MyHomePageState extends State<MyHomePage> {
       child: Container(
         width: double.infinity,
         height: double.infinity,
-        // child: WebView(
-        //   javascriptMode: JavascriptMode.unrestricted,
-        //   onWebViewCreated: (WebViewController controller) {
-        //     controller.loadHtmlString(htmlData);
-        //   },
-        // ),
-        child: Text(htmlData.isEmpty ? 'Welcome to BOE' : htmlData),
+        child: WebView(
+          javascriptMode: JavascriptMode.unrestricted,
+          onWebViewCreated: (WebViewController controller) {
+            controller.loadHtmlString(htmlData);
+          },
+        ),
+        // child: Text(htmlData.isEmpty ? 'Welcome to BOE' : htmlData),
       ),
     ));
   }
@@ -267,8 +323,9 @@ class _MyHomePageState extends State<MyHomePage> {
     planCronMap.forEach((key, value) {
       value.close();
     });
-    channel.sink.close();
-    heartBeat.cancel();
+    channel?.sink.close();
+    heartBeat?.cancel();
+    reconnectTimer?.cancel();
     super.dispose();
   }
 }
