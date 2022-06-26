@@ -102,6 +102,16 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     openSocket();
+    Future.delayed(Duration.zero, () {
+      if (MediaQuery.of(context).size.width <
+          MediaQuery.of(context).size.height) {
+        print('to horizontal screen');
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight
+        ]);
+      }
+    });
   }
 
   /// 连接回调
@@ -115,8 +125,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   initHeartBeat() {
-    heartBeat =
-        Timer.periodic(Duration(milliseconds: heartTimes), (timer) async {
+    heartBeat = Timer.periodic(Duration(milliseconds: 5000), (timer) async {
       try {
         // print('ping');
         final int runningTime = await platform.invokeMethod('getRunningTime');
