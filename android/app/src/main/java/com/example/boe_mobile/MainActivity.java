@@ -80,7 +80,7 @@ public class MainActivity extends FlutterActivity {
                                     PackageManager pm = getPackageManager();
                                     PackageInfo pi = pm.getPackageInfo(getPackageName(), 0);
                                     String versionName = pi.versionName;
-                                    map.put("versionApp", versionName);
+                                    map.put("appVersion", versionName);
                                 } catch (Exception e) {
                                     Log.e("VersionInfo", "Exception", e);
                                 }

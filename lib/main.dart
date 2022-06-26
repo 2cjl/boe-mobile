@@ -96,9 +96,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Timer? heartBeat; // 心跳定时器
   Timer? reconnectTimer; // 重连定时器
   final heartTimes = 3000; // 心跳间隔
-  final num reconnectCount = 60; // 重连次数，默认60次
   num planIdNow = 0; // 0 是没有计划执行
-  num reconnectTimes = 0; // 重连计数器
 
   @override
   void initState() {
@@ -157,11 +155,11 @@ class _MyHomePageState extends State<MyHomePage> {
         .then((Position position) {
       info['latitude'] = position.latitude;
       info['longitude'] = position.longitude;
-      // print('info $info');
-      sendHandle(<String, dynamic>{'type': 'device_info', 'info': info});
+      print('info $info');
+      sendHandle(<String, dynamic>{'type': 'deviceInfo', 'info': info});
     }).catchError((e) {
       print('Failed to get position: ${e.message}');
-      sendHandle(<String, dynamic>{'type': 'device_info', 'info': info});
+      sendHandle(<String, dynamic>{'type': 'deviceInfo', 'info': info});
     });
   }
 
@@ -262,18 +260,16 @@ class _MyHomePageState extends State<MyHomePage> {
     sayHello();
     initHeartBeat();
     syncPlan();
-    getDeviceInfo();
   }
 
   // ws 连接
   openSocket() {
     if (channel == null) channel?.sink.close();
     channel = WebSocketChannel.connect(
-      Uri.parse('ws://47.97.9.122:8888/'),
+      Uri.parse('ws://boe.vinf.top:8081/'),
     );
     print('connect succeed');
     // 连接成功，重置重连计数器
-    reconnectTimes = 0;
     reconnectTimer?.cancel();
     listenHandle();
     onOpen();
@@ -281,23 +277,15 @@ class _MyHomePageState extends State<MyHomePage> {
 
   // 重连机制
   reconnect() {
-    if (reconnectTimes < reconnectCount) {
-      reconnectTimes++;
-      reconnectTimer =
-          Timer.periodic(Duration(milliseconds: heartTimes), (timer) {
-        openSocket();
-      });
-    } else {
-      print('connect failed');
-      reconnectTimer?.cancel();
-      return;
-    }
+    reconnectTimer =
+        Timer.periodic(Duration(milliseconds: heartTimes), (timer) {
+      openSocket();
+    });
   }
 
   // ws 关闭连接回调
   webSocketOnDone() {
     print('ws closed, try to reconnect');
-    reconnect();
   }
 
   @override
