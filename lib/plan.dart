@@ -2,20 +2,21 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'plan.g.dart';
 
-@JsonSerializable()
+@JsonSerializable(explicitToJson: true)
 class Plan {
   int id;
   String startDate;
   String endDate;
+  String mode;
   List<PlayPeriod> playPeriods;
 
-  Plan(this.id, this.startDate, this.endDate, this.playPeriods);
+  Plan(this.id, this.startDate, this.endDate, this.mode, this.playPeriods);
   factory Plan.fromJson(Map<String, dynamic> json) => _$PlanFromJson(json);
   Map<String, dynamic> toJson() => _$PlanToJson(this);
 
   @override
   String toString() {
-    return 'Plan{startTime: $startDate, endTime: $endDate, playPeriods: $playPeriods}';
+    return 'Plan{startTime: $startDate, endTime: $endDate, mode: $mode, playPeriods: $playPeriods}';
   }
 }
 

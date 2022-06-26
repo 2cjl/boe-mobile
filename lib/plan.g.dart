@@ -10,6 +10,7 @@ Plan _$PlanFromJson(Map<String, dynamic> json) => Plan(
       json['id'] as int,
       json['startDate'] as String,
       json['endDate'] as String,
+      json['mode'] as String,
       (json['playPeriods'] as List<dynamic>)
           .map((e) => PlayPeriod.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -19,7 +20,8 @@ Map<String, dynamic> _$PlanToJson(Plan instance) => <String, dynamic>{
       'id': instance.id,
       'startDate': instance.startDate,
       'endDate': instance.endDate,
-      'playPeriods': instance.playPeriods,
+      'mode': instance.mode,
+      'playPeriods': instance.playPeriods.map((e) => e.toJson()).toList(),
     };
 
 PlayPeriod _$PlayPeriodFromJson(Map<String, dynamic> json) => PlayPeriod(

@@ -30,21 +30,13 @@ class MyApp extends StatelessWidget {
   }
 }
 
-String htmlData = r'''
+String welcomeHtml = r'''
 <!DOCTYPE html>
 <html lang="en">
 <body>
-<img id="img" style="height: 100vh; width: 100%; object-fit: scale-down">
-<script>
-    let imgs = ['https://s3.bmp.ovh/imgs/2022/06/24/415d5ef060f6b058.jpeg', 'https://s3.bmp.ovh/imgs/2022/06/24/50dedbe0da3b01f5.jpeg']
-    let obj = document.getElementById("img");
-    let i = 0;
-    let runThis = () => {
-        obj.src = imgs[i++ % 2];
-    }
-    runThis()
-    setInterval(runThis, 3000)
-</script>
+<div id="welcome" style="height: 100vh; width: 100%; display:flex; justify-content:center; align-items:center;">
+  <h1 style="font-size: 100px">Welcome to BOE!</h1>
+</div>
 </body>
 </html>
 ''';
@@ -54,6 +46,7 @@ String jsonString = '''
         "id": 1,
         "startDate": "2022-06-24", 
         "endDate": "2022-06-26",
+        "mode": "按时段播放",
         "playPeriods": [
           {
             "startTime": "19:17:00", 
@@ -67,6 +60,7 @@ String jsonString = '''
         "id": 2,
         "startDate": "2022-07-10", 
         "endDate": "2022-07-26",
+        "mode": "按时段播放",
         "playPeriods": [
           {
             "startTime": "08:00:00", 
@@ -90,6 +84,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel('tclx.xyz/info');
+  WebViewController? controller;
   Map<int, PlanCron> planCronMap = {};
   WebSocketChannel? channel;
   Timer? heartBeat; // 心跳定时器
@@ -130,10 +125,6 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  syncPlan() {
-    sendHandle(<String, dynamic>{'type': 'syncPlan'});
-  }
-
   getDeviceInfo() async {
     Map<String, dynamic> info = {};
     try {
@@ -169,8 +160,10 @@ class _MyHomePageState extends State<MyHomePage> {
     // 创建时间段计时器
     periodCron() {
       for (var playPeriod in plan.playPeriods) {
-        if (isBetweenTime(playPeriod.startTime, playPeriod.endTime)) {
-          htmlData = playPeriod.html;
+        if (isBetweenTime(playPeriod.startTime, playPeriod.endTime, playPeriod.loopMode)) {
+          setState(() {
+            controller?.loadHtmlString(playPeriod.html);
+          });
         }
         String startTime =
             generateCronTime(playPeriod.startTime, playPeriod.loopMode);
@@ -179,7 +172,7 @@ class _MyHomePageState extends State<MyHomePage> {
               '[${playPeriod.startTime}]plan ${plan.id} start time: ${playPeriod.html}');
           planIdNow = plan.id;
           setState(() {
-            htmlData = playPeriod.html;
+            controller?.loadHtmlString(playPeriod.html);
           });
         });
         String endTime =
@@ -188,7 +181,7 @@ class _MyHomePageState extends State<MyHomePage> {
           print('[${playPeriod.endTime}]plan ${plan.id} stop time: stop');
           planIdNow = 0;
           setState(() {
-            htmlData = '';
+            controller?.loadHtmlString(welcomeHtml);
           });
         });
       }
@@ -213,7 +206,7 @@ class _MyHomePageState extends State<MyHomePage> {
       print('[${generateCronDate(plan.endDate)}]plan ${plan.id} end date: end');
       planIdNow = 0;
       setState(() {
-        htmlData = '';
+        controller?.loadHtmlString(welcomeHtml);
       });
       planCron.close();
       planCronMap.remove(plan.id);
@@ -229,8 +222,11 @@ class _MyHomePageState extends State<MyHomePage> {
       Map<String, dynamic> msgMap = json.decode(message);
       switch (msgMap['type']) {
         case 'planList':
-          List<Plan> plans = List<Plan>.from(msgMap[
-              'plan']); // avoid error: type 'List<dynamic>' is not a subtype of type 'String'
+          // List<Plan> plans = List<Plan>.from(msgMap['plan']); // avoid error: type 'List<dynamic>' is not a subtype of type 'String'type of type 'String'
+          List<Plan> plans = (msgMap['plan'] as List)
+              .map((i) => Plan.fromJson(i))
+              .toList();
+
           for (var plan in plans) {
             addCron(plan);
           }
@@ -243,6 +239,13 @@ class _MyHomePageState extends State<MyHomePage> {
           break;
         case 'hi':
           print('hello succeed');
+          initHeartBeat();
+          break;
+        case 'deletePlan':
+          var delPlanMap = json.decode(message);
+          for (var id in (delPlanMap['planIds'] as List)) {
+            planCronMap.remove(id);
+          }
           break;
         default:
           print('not support type');
@@ -252,13 +255,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   sendHandle(Map<String, dynamic> data) {
     channel?.sink.add(json.encode(data));
-  }
-
-  // 连接开启回调
-  onOpen() {
-    sayHello();
-    initHeartBeat();
-    syncPlan();
   }
 
   // ws 连接
@@ -271,7 +267,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // 连接成功，重置重连计数器
     reconnectTimer?.cancel();
     listenHandle();
-    onOpen();
+    sayHello();
   }
 
   // 重连机制
@@ -285,6 +281,7 @@ class _MyHomePageState extends State<MyHomePage> {
   // ws 关闭连接回调
   webSocketOnDone() {
     print('ws closed, try to reconnect');
+    reconnect();
   }
 
   @override
@@ -304,11 +301,11 @@ class _MyHomePageState extends State<MyHomePage> {
         height: double.infinity,
         child: WebView(
           javascriptMode: JavascriptMode.unrestricted,
-          onWebViewCreated: (WebViewController controller) {
-            controller.loadHtmlString(htmlData);
+          onWebViewCreated: (WebViewController webViewController) {
+            controller = webViewController;
+            controller?.loadHtmlString(welcomeHtml);
           },
         ),
-        // child: Text(htmlData.isEmpty ? 'Welcome to BOE' : htmlData),
       ),
     ));
   }

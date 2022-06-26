@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 // 2022-06-24 - 2022-06-26
 // 08:00:00 - 20:00:00
@@ -27,7 +28,7 @@ String generateCronDate(String date) {
   return '00 00 00 ${strs[2]} ${strs[1]} *';
 }
 
-bool isBetweenTime(String begin, String end) {
+bool isBetweenTime(String begin, String end, String mode) {
   List<int> bStrs = begin.split(':').map((e) => int.parse(e)).toList();
   List<int> eStrs = end.split(':').map((e) => int.parse(e)).toList();
   DateTime now = DateTime.now();
@@ -35,6 +36,13 @@ bool isBetweenTime(String begin, String end) {
   DateTime eTime = DateTime(now.year, now.month, now.day, eStrs[0], eStrs[1], eStrs[2]);
   if (now.isBefore(bTime) || now.isAfter(eTime)) {
     return false;
+  }
+  Map<String, dynamic> modeMap = json.decode(mode);
+  print('${now.day} ${now.weekday}');
+  if (modeMap['mode'] == '每月') {
+    if (!(modeMap["times"] as List).contains(now.day)) return false;
+  } else if (modeMap['mode'] == '每周') {
+    if (!(modeMap["times"] as List).contains(now.weekday)) return false;
   }
   return true;
 }
