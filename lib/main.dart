@@ -7,7 +7,6 @@ import 'package:boe_mobile/utils.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
-import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -101,17 +100,8 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIOverlays([]); // 初始化时隐藏
     openSocket();
-    Future.delayed(Duration.zero, () {
-      if (MediaQuery.of(context).size.width <
-          MediaQuery.of(context).size.height) {
-        print('to horizontal screen');
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight
-        ]);
-      }
-    });
   }
 
   /// 连接回调
@@ -299,6 +289,14 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 强制横屏
+    if (MediaQuery.of(context).size.width <
+        MediaQuery.of(context).size.height) {
+      print('to horizontal screen');
+      SystemChrome.setPreferredOrientations(
+          [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+    }
+
     return Scaffold(
         body: Center(
       child: Container(
@@ -323,6 +321,8 @@ class _MyHomePageState extends State<MyHomePage> {
     channel?.sink.close();
     heartBeat?.cancel();
     reconnectTimer?.cancel();
+    SystemChrome.setEnabledSystemUIOverlays(
+        SystemUiOverlay.values); // 页面关闭时恢复正常设置
     super.dispose();
   }
 }
