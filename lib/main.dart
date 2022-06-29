@@ -1,14 +1,18 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:boe_mobile/plan.dart';
 import 'package:boe_mobile/plan_cron.dart';
 import 'package:boe_mobile/utils.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:screen_brightness_platform_interface/screen_brightness_platform_interface.dart';
 
 void main() {
   runApp(const MyApp());
@@ -84,7 +88,8 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel('tclx.xyz/info');
-  WebViewController? controller;
+  GlobalKey rootWidgetKey = GlobalKey();
+  InAppWebViewController? controller;
   Map<int, PlanCron> planCronMap = {};
   WebSocketChannel? channel;
   Timer? heartBeat; // 心跳定时器
@@ -160,10 +165,9 @@ class _MyHomePageState extends State<MyHomePage> {
     // 创建时间段计时器
     periodCron() {
       for (var playPeriod in plan.playPeriods) {
-        if (isBetweenTime(playPeriod.startTime, playPeriod.endTime, playPeriod.loopMode)) {
-          setState(() {
-            controller?.loadHtmlString(playPeriod.html);
-          });
+        if (isBetweenTime(
+            playPeriod.startTime, playPeriod.endTime, playPeriod.loopMode)) {
+          controller?.loadData(data: playPeriod.html);
         }
         String startTime =
             generateCronTime(playPeriod.startTime, playPeriod.loopMode);
@@ -171,18 +175,14 @@ class _MyHomePageState extends State<MyHomePage> {
           print(
               '[${playPeriod.startTime}]plan ${plan.id} start time: ${playPeriod.html}');
           planIdNow = plan.id;
-          setState(() {
-            controller?.loadHtmlString(playPeriod.html);
-          });
+          controller?.loadData(data: playPeriod.html);
         });
         String endTime =
             generateCronTime(playPeriod.endTime, playPeriod.loopMode);
         planCron.add(endTime, () {
           print('[${playPeriod.endTime}]plan ${plan.id} stop time: stop');
           planIdNow = 0;
-          setState(() {
-            controller?.loadHtmlString(welcomeHtml);
-          });
+          controller?.loadData(data: welcomeHtml);
         });
       }
     }
@@ -205,9 +205,7 @@ class _MyHomePageState extends State<MyHomePage> {
     planCron.add(generateCronDate(plan.endDate), () {
       print('[${generateCronDate(plan.endDate)}]plan ${plan.id} end date: end');
       planIdNow = 0;
-      setState(() {
-        controller?.loadHtmlString(welcomeHtml);
-      });
+      controller?.loadData(data: welcomeHtml);
       planCron.close();
       planCronMap.remove(plan.id);
     });
@@ -223,9 +221,8 @@ class _MyHomePageState extends State<MyHomePage> {
       switch (msgMap['type']) {
         case 'planList':
           // List<Plan> plans = List<Plan>.from(msgMap['plan']); // avoid error: type 'List<dynamic>' is not a subtype of type 'String'type of type 'String'
-          List<Plan> plans = (msgMap['plan'] as List)
-              .map((i) => Plan.fromJson(i))
-              .toList();
+          List<Plan> plans =
+              (msgMap['plan'] as List).map((i) => Plan.fromJson(i)).toList();
 
           for (var plan in plans) {
             addCron(plan);
@@ -244,6 +241,11 @@ class _MyHomePageState extends State<MyHomePage> {
         case 'deletePlan':
           var delPlanMap = json.decode(message);
           for (var id in (delPlanMap['planIds'] as List)) {
+            if (id == planIdNow) {
+              planIdNow = 0;
+              controller?.loadData(data: welcomeHtml);
+            }
+            planCronMap[id]?.close();
             planCronMap.remove(id);
           }
           break;
@@ -284,6 +286,52 @@ class _MyHomePageState extends State<MyHomePage> {
     reconnect();
   }
 
+  setBrightness(double brightness) async {
+    try {
+      await ScreenBrightnessPlatform.instance.setScreenBrightness(brightness);
+    } catch (e) {
+      debugPrint(e.toString());
+      throw 'Failed to set brightness';
+    }
+  }
+
+  resetBrightness() async {
+    try {
+      await ScreenBrightnessPlatform.instance.resetScreenBrightness();
+    } catch (e) {
+      debugPrint(e.toString());
+      throw 'Failed to reset brightness';
+    }
+  }
+
+  // screenshot without webview
+  captureWidget() async {
+    final boundary = rootWidgetKey.currentContext?.findRenderObject();
+    if (boundary != null && boundary is RenderRepaintBoundary) {
+      final image = await boundary.toImage();
+      ByteData? byteData = await image.toByteData(format: ImageByteFormat.png);
+      if (byteData != null) {
+        return byteData;
+      }
+    }
+  }
+
+  ShowCapturedWidget(BuildContext context, Uint8List capturedImage) {
+    return showDialog(
+      useSafeArea: false,
+      context: context,
+      builder: (context) => Scaffold(
+        appBar: AppBar(
+          title: Text("Captured widget screenshot"),
+        ),
+        body: Center(
+            child: capturedImage != null
+                ? Image.memory(capturedImage)
+                : Container()),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // 强制横屏
@@ -294,20 +342,34 @@ class _MyHomePageState extends State<MyHomePage> {
           [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     }
 
-    return Scaffold(
-        body: Center(
-      child: Container(
-        width: double.infinity,
-        height: double.infinity,
-        child: WebView(
-          javascriptMode: JavascriptMode.unrestricted,
-          onWebViewCreated: (WebViewController webViewController) {
-            controller = webViewController;
-            controller?.loadHtmlString(welcomeHtml);
-          },
-        ),
-      ),
-    ));
+    return RepaintBoundary(
+        key: rootWidgetKey,
+        child: Scaffold(
+            body: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: double.infinity,
+              height: double.infinity,
+              child: InAppWebView(
+                onWebViewCreated: (InAppWebViewController webViewController) {
+                  controller = webViewController;
+                  controller?.loadData(data: welcomeHtml);
+                },
+              ),
+            ),
+            ElevatedButton(
+              child: const Text(
+                'Capture',
+              ),
+              onPressed: () async {
+                Uint8List? screenshotBytes = await controller?.takeScreenshot();
+                ShowCapturedWidget(context, screenshotBytes!);
+                // setBrightness(1);
+              },
+            ),
+          ],
+        )));
   }
 
   @override
@@ -318,6 +380,7 @@ class _MyHomePageState extends State<MyHomePage> {
     channel?.sink.close();
     heartBeat?.cancel();
     reconnectTimer?.cancel();
+    resetBrightness();
     SystemChrome.setEnabledSystemUIOverlays(
         SystemUiOverlay.values); // 页面关闭时恢复正常设置
     super.dispose();
