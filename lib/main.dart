@@ -101,7 +101,6 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIOverlays([]); // 初始化时隐藏
-    openSocket();
   }
 
   /// 连接回调
@@ -231,8 +230,10 @@ class _MyHomePageState extends State<MyHomePage> {
       switch (msgMap['type']) {
         case 'planList':
           // List<Plan> plans = List<Plan>.from(msgMap['plan']); // avoid error: type 'List<dynamic>' is not a subtype of type 'String'type of type 'String'
-          List<Plan> plans =
-              (msgMap['plan'] as List).map((i) => Plan.fromJson(i)).toList();
+          // print(Plan.fromJson((msgMap['plan'] as List)[0]));
+          List<Plan> plans = (msgMap['plan'] as List)
+              .map((i) => Plan.fromJson(i))
+              .toList();
 
           for (var plan in plans) {
             addCron(plan);
@@ -337,7 +338,10 @@ class _MyHomePageState extends State<MyHomePage> {
   getScreenshot() async {
     Uint8List? screenshotBytes = await controller?.takeScreenshot();
     if (screenshotBytes != null) {
-      sendHandle(<String, dynamic>{'type': 'screenshot', 'data': uint8ListTob64(screenshotBytes)});
+      sendHandle(<String, dynamic>{
+        'type': 'screenshot',
+        'data': uint8ListTob64(screenshotBytes)
+      });
     }
   }
 
@@ -364,6 +368,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 onWebViewCreated: (InAppWebViewController webViewController) {
                   controller = webViewController;
                   controller?.loadData(data: welcomeHtml);
+                  openSocket();  // 保证 controller 不为 null
                 },
               ),
             ),
