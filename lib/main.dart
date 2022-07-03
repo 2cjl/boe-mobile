@@ -159,6 +159,14 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   addCron(Plan plan) {
+    if (planCronMap.containsKey(plan.id)) {
+      if (planIdNow == plan.id) {
+        planIdNow = 0;
+        controller?.loadData(data: welcomeHtml);
+      }
+      planCronMap[plan.id]?.close();
+      planCronMap.remove(plan.id);
+    }
     if (DateTime.now().isAfter(DateTime.parse(plan.endDate))) return;
     PlanCron planCron = PlanCron(plan.id);
 
@@ -204,8 +212,10 @@ class _MyHomePageState extends State<MyHomePage> {
     // 把所有 cron 删除
     planCron.add(generateCronDate(plan.endDate), () {
       print('[${generateCronDate(plan.endDate)}]plan ${plan.id} end date: end');
-      planIdNow = 0;
-      controller?.loadData(data: welcomeHtml);
+      if (planIdNow == plan.id) {
+        planIdNow = 0;
+        controller?.loadData(data: welcomeHtml);
+      }
       planCron.close();
       planCronMap.remove(plan.id);
     });
@@ -249,6 +259,13 @@ class _MyHomePageState extends State<MyHomePage> {
             planCronMap.remove(id);
           }
           break;
+        case 'screenshot':
+          getScreenshot();
+          break;
+        case 'brightness':
+          Map<String, dynamic> msgMap = json.decode(message);
+          setBrightness(msgMap['data'] as double);
+          break;
         default:
           print('not support type');
       }
@@ -287,6 +304,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   setBrightness(double brightness) async {
+    print('brightness $brightness');
     try {
       await ScreenBrightnessPlatform.instance.setScreenBrightness(brightness);
     } catch (e) {
@@ -316,20 +334,11 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  ShowCapturedWidget(BuildContext context, Uint8List capturedImage) {
-    return showDialog(
-      useSafeArea: false,
-      context: context,
-      builder: (context) => Scaffold(
-        appBar: AppBar(
-          title: Text("Captured widget screenshot"),
-        ),
-        body: Center(
-            child: capturedImage != null
-                ? Image.memory(capturedImage)
-                : Container()),
-      ),
-    );
+  getScreenshot() async {
+    Uint8List? screenshotBytes = await controller?.takeScreenshot();
+    if (screenshotBytes != null) {
+      sendHandle(<String, dynamic>{'type': 'screenshot', 'data': uint8ListTob64(screenshotBytes)});
+    }
   }
 
   @override
@@ -357,16 +366,6 @@ class _MyHomePageState extends State<MyHomePage> {
                   controller?.loadData(data: welcomeHtml);
                 },
               ),
-            ),
-            ElevatedButton(
-              child: const Text(
-                'Capture',
-              ),
-              onPressed: () async {
-                Uint8List? screenshotBytes = await controller?.takeScreenshot();
-                ShowCapturedWidget(context, screenshotBytes!);
-                // setBrightness(1);
-              },
             ),
           ],
         )));

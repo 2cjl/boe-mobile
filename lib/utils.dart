@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 // 2022-06-24 - 2022-06-26
 // 08:00:00 - 20:00:00
@@ -44,4 +45,10 @@ bool isBetweenTime(String begin, String end, String mode) {
     if (!(modeMap["times"] as List).contains(now.weekday)) return false;
   }
   return true;
+}
+
+String uint8ListTob64(Uint8List uint8list) {
+  String base64String = base64Encode(uint8list);
+  String header = "data:image/png;base64,";
+  return header + base64String;
 }
