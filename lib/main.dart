@@ -44,38 +44,6 @@ String welcomeHtml = r'''
 </body>
 </html>
 ''';
-String jsonString = '''
-    [
-      {
-        "id": 1,
-        "startDate": "2022-06-24", 
-        "endDate": "2022-06-26",
-        "mode": "按时段播放",
-        "playPeriods": [
-          {
-            "startTime": "19:17:00", 
-            "endTime": "19:17:10",
-            "loopMode": "{\\"mode\\":\\"每周\\",\\"times\\":[1,3,5]}",
-            "html": "html_1"
-          }
-        ]
-      },
-      {
-        "id": 2,
-        "startDate": "2022-07-10", 
-        "endDate": "2022-07-26",
-        "mode": "按时段播放",
-        "playPeriods": [
-          {
-            "startTime": "08:00:00", 
-            "endTime": "21:00:00",
-            "loopMode": "{\\"mode\\":\\"每周\\"}",
-            "html": "html_2"
-          }
-        ]
-      }
-    ]
-    ''';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({Key? key, required this.title}) : super(key: key);
@@ -229,11 +197,23 @@ class _MyHomePageState extends State<MyHomePage> {
       Map<String, dynamic> msgMap = json.decode(message);
       switch (msgMap['type']) {
         case 'planList':
-          // List<Plan> plans = List<Plan>.from(msgMap['plan']); // avoid error: type 'List<dynamic>' is not a subtype of type 'String'type of type 'String'
-          // print(Plan.fromJson((msgMap['plan'] as List)[0]));
-          List<Plan> plans = (msgMap['plan'] as List)
-              .map((i) => Plan.fromJson(i))
-              .toList();
+          // List<Plan> plans = List<Plan>.from(
+          //     msgMap['plan']); // avoid error: type 'List<dynamic>' is not a subtype of type 'String'type of type 'String'
+          List<Plan> plans = [];
+          for (var j = 0; j < (msgMap['plan'] as List).length; j++) {
+            Map<String, dynamic> b = (msgMap['plan'] as List)[j];
+            Plan p = Plan(
+                b['id'],
+                b['startDate'],
+                b['endDate'],
+                b['mode'],
+                (b['playPeriods'] as List)
+                    .map((i) => PlayPeriod.fromJson(i))
+                    .toList());
+            plans.add(p);
+          }
+          // plans =
+          //     (msgMap['plan'] as List).map((i) => Plan.fromJson(i)).toList();
 
           for (var plan in plans) {
             addCron(plan);
@@ -368,7 +348,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 onWebViewCreated: (InAppWebViewController webViewController) {
                   controller = webViewController;
                   controller?.loadData(data: welcomeHtml);
-                  openSocket();  // 保证 controller 不为 null
+                  openSocket(); // 保证 controller 不为 null
                 },
               ),
             ),
